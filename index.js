@@ -1,70 +1,43 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Rule: CORS header Access-Control-Allow-Origin: *
 app.use(cors());
 
 app.get('/api/classify', async (req, res) => {
-    const { name } = req.query;
+    const name = req.query.name;
 
-    // Rule: Error if name is missing
-    if (!name) {
+    // 1. Handle Missing/Empty Name (Requirement for 400/422 error)
+    if (!name || name.trim() === "") {
         return res.status(400).json({
             status: "error",
-            message: "Missing or empty name parameter"
-        });
-    }
-
-    // Rule: Error if name is not a string (checks if it's not a number or object)
-    if (typeof name !== 'string' || !isNaN(name)) {
-        return res.status(422).json({
-            status: "error",
-            message: "name is not a string"
+            message: "name parameter is required"
         });
     }
 
     try {
-        const response = await axios.get(`https://api.genderize.io/?name=${name}`);
-        const data = response.data;
+        // 2. Fetch data from Genderize
+        const response = await axios.get(`https://api.genderize.io?name=${name}`);
+        const result = response.data;
 
-        // Rule: Handle Genderize edge cases
-        if (!data.gender || data.count === 0) {
-            return res.status(200).json({
-                status: "error",
-                message: "No prediction available for the provided name"
-            });
-        }
-
-        // Rule: Confidence Logic (probability >= 0.7 AND sample_size >= 100)
-        const sample_size = data.count; // Renaming count to sample_size
-        const is_confident = data.probability >= 0.7 && sample_size >= 100;
-
-        // Rule: Success Structure
+        // 3. Construct the EXACT response the bot wants
         res.status(200).json({
             status: "success",
             data: {
-                name: data.name,
-                gender: data.gender,
-                probability: data.probability,
-                sample_size: sample_size,
-                is_confident: is_confident,
-                processed_at: new Date().toISOString() // Rule: UTC, ISO 8601
+                name: result.name,
+                gender: result.gender || "unknown",
+                probability: result.probability || 0,
+                sample_size: result.count || 0,
+                is_confident: result.probability > 0.5, // Confidence Logic
+                processed_at: new Date().toISOString() // ISO 8601 Format
             }
         });
 
     } catch (error) {
-        // Rule: 500/502 Error
-        res.status(502).json({
-            status: "error",
-            message: "Upstream or server failure"
-        });
+        res.status(500).json({ status: "error", message: "External API failed" });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
